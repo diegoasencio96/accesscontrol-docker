@@ -1,0 +1,76 @@
+version: '3.7'
+services:
+
+############ ACCESS CONTROL #############
+
+  accesscontrol_web:
+    restart: always
+    build: ../accesscontrol-backend/src/
+    volumes:
+      - ../accesscontrol-backend/src/accesscontrol/:/srv/accesscontrol-backend/src/accesscontrol
+    #env_file:
+    #  - ./accesscontrol-backend/src/colesan/.env
+    entrypoint: ["/docker-entrypoint.sh"]
+    depends_on:
+      - database_parquesoftmeta
+      - redis
+    links:
+      - database_parquesoftmeta
+
+
+  database_parquesoftmeta:
+    image: mysql:5.7
+    container_name: database_accesscontrol
+    volumes:
+      - ./docker/database/dumps:/dumps:rw,cached
+      - ./docker/database/data/mysql-master:/var/lib/mysql:rw,cached
+      - ./docker/database/config/mysql-master:/etc/mysql/conf.d:rw,cached
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_MASTER_ROOT_PASSWORD}
+    expose:
+      - "3306"
+    ports:
+      - "3306:3306"
+    restart: always
+
+  celery:
+    build: ../accesscontrol-backend/src/
+    command: celery -A accesscontrol worker -l info
+    volumes:
+      - ../accesscontrol-backend/src/accesscontrol/:/srv/accesscontrol-backend/src/accesscontrol
+    depends_on:
+      - database_parquesoftmeta
+      - redis
+
+  celery-beat:
+    build: ../accesscontrol-backend/src/
+    command: celery -A accesscontrol beat -l info --pidfile="/tmp/celerybeat.pid"
+    volumes:
+      - ../accesscontrol-backend/src/accesscontrol/:/srv/accesscontrol-backend/src/accesscontrol
+    depends_on:
+      - database_parquesoftmeta
+      - redis
+
+########## END ACCESS CONTROL ############
+
+  nginx:
+    restart: always
+    build: ./docker/nginx
+    ports:
+      - "81:81"
+    volumes:
+      - ../accesscontrol-backend/src/accesscontrol/static:/srv/accesscontrol-backend/src/accesscontrol/static
+      - ../accesscontrol-backend/src/accesscontrol/media:/srv/accesscontrol-backend/src/accesscontrol/media
+      - ./docker/nginx/sites-enabled/accesscontrol-backend/src.conf:/etc/nginx/conf.d/accesscontrol-backend/src.conf
+    depends_on:
+      - accesscontrol_web
+    links:
+      - accesscontrol_web
+
+  redis:
+    restart: always
+    image: redis:latest
+    ports:
+     - '6378:6379'
+volumes:
+  database_parquesoftmeta_data:
